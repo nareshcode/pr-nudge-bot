@@ -1,9 +1,13 @@
-
 name: PR NudgeBot
 
 on:
   pull_request:
     types: [opened, reopened, synchronize, edited]
+
+permissions:
+  contents: read
+  pull-requests: write
+  issues: write
 
 jobs:
   pr-nudge:
