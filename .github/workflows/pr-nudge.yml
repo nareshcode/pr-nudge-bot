@@ -16,6 +16,11 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v3
 
+      - name: Install GitHub CLI
+        run: |
+          sudo apt update
+          sudo apt install gh -y
+
       - name: Call GPT to generate PR summary
         env:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
