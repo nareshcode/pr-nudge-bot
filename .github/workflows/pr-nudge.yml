@@ -32,7 +32,6 @@ jobs:
           echo "➡️ Title: $pr_title"
           echo "➡️ Body: $pr_body"
 
-          # Safely build JSON with prompt
           json_payload=$(jq -n \
             --arg title "$pr_title" \
             --arg body "$pr_body" \
@@ -48,7 +47,7 @@ jobs:
             }'
           )
 
-          echo "📦 Request:"
+          echo "📦 JSON Payload:"
           echo "$json_payload"
 
           response=$(curl -s https://api.openai.com/v1/chat/completions \
@@ -57,10 +56,10 @@ jobs:
             -d "$json_payload"
           )
 
-          echo "📦 Response:"
-          echo "$response"
+          echo "📦 Raw Response:"
+          echo "$response" | jq .
 
-          summary=$(echo "$response" | jq -r '.choices[0].message.content')
+          summary=$(echo "$response" | jq -r '.choices[0].message.content // "❌ Could not extract summary from response"')
 
           echo "✅ Summary:"
           echo "$summary"
