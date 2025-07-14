@@ -1,55 +1,52 @@
-name: PR NudgeBot
+name: PR AI Summary Bot
 
 on:
   pull_request:
-    types: [opened, reopened, synchronize, edited]
+    types: [opened, reopened]
 
 permissions:
   contents: read
   pull-requests: write
-  issues: write
 
 jobs:
-  pr-nudge:
+  ai-summary:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout Repo
+      - name: Checkout
         uses: actions/checkout@v3
 
-      - name: PR Nudge Script
-        uses: actions/github-script@v6
-        with:
-          script: |
-            const pr = context.payload.pull_request;
-            const reviews = await github.rest.pulls.listReviews({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              pull_number: pr.number,
-            });
+      - name: Call GPT to generate PR summary
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+        run: |
+          echo "Preparing PR summary..."
+          
+          # Extract PR details using GitHub CLI
+          pr_title="${{ github.event.pull_request.title }}"
+          pr_body="${{ github.event.pull_request.body }}"
+          
+          # Combine into prompt
+          prompt="Summarize this pull request for a team of developers in 2-3 sentences:\nTitle: $pr_title\nDescription: $pr_body"
 
-            const hasConflicts = pr.mergeable_state === "dirty";
-            const approved = reviews.data.some(r => r.state === "APPROVED");
+          # Call OpenAI API (GPT-3.5)
+          response=$(curl -s https://api.openai.com/v1/chat/completions \
+            -H "Authorization: Bearer $OPENAI_API_KEY" \
+            -H "Content-Type: application/json" \
+            -d '{
+              "model": "gpt-3.5-turbo",
+              "messages": [{"role": "user", "content": "'"$prompt"'"}],
+              "temperature": 0.7
+            }')
 
-            if (hasConflicts) {
-              await github.rest.issues.createComment({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                issue_number: pr.number,
-                body: "⚠️ This PR has merge conflicts. Please resolve them."
-              });
-            } else if (!approved) {
-              await github.rest.issues.createComment({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                issue_number: pr.number,
-                body: "👋 Friendly reminder to review this PR!"
-              });
-            } else {
-              await github.rest.issues.createComment({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                issue_number: pr.number,
-                body: "✅ All reviews approved! Consider merging this PR."
-              });
-            }
+          summary=$(echo $response | jq -r '.choices[0].message.content')
+
+          echo "Summary received:"
+          echo "$summary"
+
+          # Comment back on the PR
+          gh pr comment ${{ github.event.pull_request.number }} --body "$summary"
+        shell: bash
+
+      - name: Install GitHub CLI
+        uses: devcontainers-contrib/actions/setup-gh-cli@v1
