@@ -1,2 +1,1 @@
-:)
-yo yo yo
+what the heck is a prompt
