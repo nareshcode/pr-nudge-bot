@@ -1,0 +1,51 @@
+
+name: PR NudgeBot
+
+on:
+  pull_request:
+    types: [opened, reopened, synchronize, edited]
+
+jobs:
+  pr-nudge:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Repo
+        uses: actions/checkout@v3
+
+      - name: PR Nudge Script
+        uses: actions/github-script@v6
+        with:
+          script: |
+            const pr = context.payload.pull_request;
+            const reviews = await github.rest.pulls.listReviews({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: pr.number,
+            });
+
+            const hasConflicts = pr.mergeable_state === "dirty";
+            const approved = reviews.data.some(r => r.state === "APPROVED");
+
+            if (hasConflicts) {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: pr.number,
+                body: "⚠️ This PR has merge conflicts. Please resolve them."
+              });
+            } else if (!approved) {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: pr.number,
+                body: "👋 Friendly reminder to review this PR!"
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: pr.number,
+                body: "✅ All reviews approved! Consider merging this PR."
+              });
+            }
