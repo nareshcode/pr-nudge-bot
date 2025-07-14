@@ -32,33 +32,37 @@ jobs:
           echo "➡️ Title: $pr_title"
           echo "➡️ Body: $pr_body"
 
-          # Create prompt for GPT
-          prompt=$(cat <<EOF Summarize this pull request in 2-3 simple sentences for a developer.
-          Title: $pr_title
-          Description: $pr_body
-          EOF
+          # Safely build JSON with prompt
+          json_payload=$(jq -n \
+            --arg title "$pr_title" \
+            --arg body "$pr_body" \
+            '{
+              model: "gpt-3.5-turbo",
+              messages: [
+                {
+                  role: "user",
+                  content: "Summarize this pull request in 2-3 simple sentences for a developer.\n\nTitle: \($title)\nDescription: \($body)"
+                }
+              ],
+              temperature: 0.7
+            }'
           )
 
-          # Call OpenAI GPT-3.5 Turbo API
+          echo "📦 Request:"
+          echo "$json_payload"
+
           response=$(curl -s https://api.openai.com/v1/chat/completions \
             -H "Authorization: Bearer $OPENAI_API_KEY" \
             -H "Content-Type: application/json" \
-            -d @- <<EOF
-            {
-            "model": "gpt-3.5-turbo",
-            "messages": [{"role": "user", "content": "$prompt"}],
-            "temperature": 0.7
-            }
-          EOF
+            -d "$json_payload"
           )
 
-          echo "📦 Raw OpenAI response:"
+          echo "📦 Response:"
           echo "$response"
 
           summary=$(echo "$response" | jq -r '.choices[0].message.content')
 
-          echo "✅ Final summary:"
+          echo "✅ Summary:"
           echo "$summary"
 
-          # Comment back on the PR
           gh pr comment ${{ github.event.pull_request.number }} --body "$summary"
