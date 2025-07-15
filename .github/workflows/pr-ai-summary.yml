@@ -1,4 +1,4 @@
-name: PR AI Summary Bot with Slack
+name: PR AI Summary Bot (Test Mode)
 
 on:
   pull_request:
@@ -68,16 +68,16 @@ jobs:
         run: |
           gh pr comment "$PR_NUMBER" --body "$SUMMARY"
 
-      - name: Notify Reviewers on Slack
+      - name: Send Slack Notification (Test)
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
         run: |
           map_file=".github/username-map.yml"
 
-          reviewers=$(gh pr view "$PR_NUMBER" --json reviewRequests -q '.reviewRequests[].requestedReviewer.login')
+          # 🔧 Hardcoded reviewer for testing
+          reviewers="nareshcode"
 
-          # Default fallback if file doesn't exist
           if [ ! -f "$map_file" ]; then
             echo "github_to_slack:" > "$map_file"
           fi
@@ -92,7 +92,7 @@ jobs:
             fi
           done
 
-          message="🔔 *New PR for Review!*\n*Title:* $PR_TITLE\n*Link:* <$PR_URL>\n*Reviewers:* $mentions\n\n_AI Summary:_\n$SUMMARY"
+          message="🔔 *New PR for Review (Test)*\n*Title:* $PR_TITLE\n*Link:* <$PR_URL>\n*Reviewers:* $mentions\n\n_AI Summary:_\n$SUMMARY"
 
           curl -X POST -H 'Content-type: application/json' \
             --data "{\"text\": \"$message\"}" \
