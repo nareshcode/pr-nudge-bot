@@ -59,21 +59,25 @@ jobs:
           echo "$summary" > summary.txt
           echo "PR_NUMBER=$pr_number" >> $GITHUB_ENV
           echo "PR_URL=$pr_url" >> $GITHUB_ENV
+          echo "PR_TITLE=$pr_title" >> $GITHUB_ENV
           echo "SUMMARY=$summary" >> $GITHUB_ENV
 
       - name: Comment Summary on PR
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           gh pr comment "$PR_NUMBER" --body "$SUMMARY"
 
-      - name: Send to Slack
+      - name: Notify Reviewers on Slack
         env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
         run: |
-          # Load reviewer usernames
+          map_file=".github/username-map.yml"
+
           reviewers=$(gh pr view "$PR_NUMBER" --json reviewRequests -q '.reviewRequests[].requestedReviewer.login')
 
-          # Fallback if mapping file is missing
-          map_file=".github/username-map.yml"
+          # Default fallback if file doesn't exist
           if [ ! -f "$map_file" ]; then
             echo "github_to_slack:" > "$map_file"
           fi
@@ -88,8 +92,7 @@ jobs:
             fi
           done
 
-          # Post to Slack
-          message="🔔 *New PR for Review!*\n*Title:* $pr_title\n*Link:* <$PR_URL>\n*Reviewers:* $mentions\n_AI Summary:_\n$SUMMARY"
+          message="🔔 *New PR for Review!*\n*Title:* $PR_TITLE\n*Link:* <$PR_URL>\n*Reviewers:* $mentions\n\n_AI Summary:_\n$SUMMARY"
 
           curl -X POST -H 'Content-type: application/json' \
             --data "{\"text\": \"$message\"}" \
