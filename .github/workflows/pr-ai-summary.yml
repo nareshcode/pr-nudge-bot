@@ -1,99 +1,47 @@
-name: PR AI Summary Bot (Test Mode)
+name: AI PR Summary + Slack Notifier
 
 on:
   pull_request:
-    types: [opened, reopened]
-
-permissions:
-  contents: read
-  pull-requests: write
+    types: [opened, reopened, ready_for_review]
 
 jobs:
-  ai-summary:
+  pr-summary-and-slack:
     runs-on: ubuntu-latest
 
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+
     steps:
-      - name: Checkout repo
+      - name: Checkout code
         uses: actions/checkout@v3
 
-      - name: Install dependencies
+      - name: Generate PR Summary using GitHub CLI (Copilot)
+        id: summary
         run: |
-          sudo apt update
-          sudo apt install -y gh jq yq
-
-      - name: Generate AI Summary
+          gh extension install github/gh-copilot
+          SUMMARY=$(gh copilot pr summarize -R "$GITHUB_REPOSITORY" "$PR_NUMBER" 2>/dev/null || echo "⚠️ Could not generate summary.")
+          echo "summary<<EOF" >> $GITHUB_OUTPUT
+          echo "$SUMMARY" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
         env:
-          TOGETHER_API_KEY: ${{ secrets.TOGETHER_API_KEY }}
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+
+      - name: Format Slack Message
+        id: format
         run: |
-          pr_title="${{ github.event.pull_request.title }}"
-          pr_body="${{ github.event.pull_request.body }}"
-          pr_number="${{ github.event.pull_request.number }}"
-          pr_url="${{ github.event.pull_request.html_url }}"
+          PR_TITLE="${{ github.event.pull_request.title }}"
+          PR_URL="${{ github.event.pull_request.html_url }}"
+          AUTHOR="${{ github.event.pull_request.user.login }}"
+          SUMMARY="${{ steps.summary.outputs.summary }}"
 
-          prompt="Summarize this pull request in 2-3 simple sentences for a developer.\n\nTitle: $pr_title\nDescription: $pr_body"
+          TEXT="🤖 *AI Summary of PR*\n• *Title*: $PR_TITLE\n• *Author*: $AUTHOR\n• *Link*: <$PR_URL>\n• *Summary*: $SUMMARY"
+          echo "text<<EOF" >> $GITHUB_OUTPUT
+          echo "$TEXT" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
 
-          json_payload=$(jq -n \
-            --arg content "$prompt" \
-            '{
-              model: "mistralai/Mixtral-8x7B-Instruct-v0.1",
-              messages: [
-                {
-                  role: "user",
-                  content: $content
-                }
-              ],
-              temperature: 0.7
-            }'
-          )
-
-          response=$(curl -s https://api.together.xyz/v1/chat/completions \
-            -H "Authorization: Bearer $TOGETHER_API_KEY" \
-            -H "Content-Type: application/json" \
-            -d "$json_payload")
-
-          echo "$response" | jq .
-          summary=$(echo "$response" | jq -r '.choices[0].message.content // "❌ Could not extract summary from response"')
-          echo "AI Summary: $summary"
-
-          echo "$summary" > summary.txt
-          echo "PR_NUMBER=$pr_number" >> $GITHUB_ENV
-          echo "PR_URL=$pr_url" >> $GITHUB_ENV
-          echo "PR_TITLE=$pr_title" >> $GITHUB_ENV
-          echo "SUMMARY=$summary" >> $GITHUB_ENV
-
-      - name: Comment Summary on PR
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Send to Slack
         run: |
-          gh pr comment "$PR_NUMBER" --body "$SUMMARY"
-
-      - name: Send Slack Notification (Test)
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
-        run: |
-          map_file=".github/username-map.yml"
-
-          # 🔧 Hardcoded reviewer for testing
-          reviewers="nareshcode"
-
-          if [ ! -f "$map_file" ]; then
-            echo "github_to_slack:" > "$map_file"
-          fi
-
-          mentions=""
-          for user in $reviewers; do
-            slack_name=$(yq ".github_to_slack.\"$user\"" "$map_file")
-            if [ "$slack_name" != "null" ]; then
-              mentions="$mentions $slack_name"
-            else
-              mentions="$mentions @$user"
-            fi
-          done
-
-          message="🔔 *New PR for Review (Test)*\n*Title:* $PR_TITLE\n*Link:* <$PR_URL>\n*Reviewers:* $mentions\n\n_AI Summary:_\n$SUMMARY"
-
           curl -X POST -H 'Content-type: application/json' \
-            --data "{\"text\": \"$message\"}" \
-            "$SLACK_WEBHOOK_URL"
+            --data "{\"text\": \"${{ steps.format.outputs.text }}\"}" \
+            $SLACK_WEBHOOK_URL
