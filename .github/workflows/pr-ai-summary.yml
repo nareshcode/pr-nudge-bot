@@ -5,7 +5,7 @@ on:
     types: [opened, reopened, ready_for_review]
 
 jobs:
-  pr-summary-and-slack:
+  ai-summary-slack:
     runs-on: ubuntu-latest
 
     env:
@@ -13,19 +13,21 @@ jobs:
       SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
 
     steps:
-      - name: Checkout code
+      - name: Checkout PR code
         uses: actions/checkout@v3
 
-      - name: Generate PR Summary using GitHub CLI (Copilot)
-        id: summary
+      - name: Setup GitHub CLI and Copilot Extension
         run: |
           gh extension install github/gh-copilot
-          SUMMARY=$(gh copilot pr summarize -R "$GITHUB_REPOSITORY" "$PR_NUMBER" 2>/dev/null || echo "⚠️ Could not generate summary.")
+
+      - name: Generate AI Summary
+        id: gen_summary
+        run: |
+          PR_NUM=${{ github.event.pull_request.number }}
+          SUMMARY=$(gh copilot pr summarize -R $GITHUB_REPOSITORY $PR_NUM 2>/dev/null || echo "⚠️ Copilot couldn't generate summary.")
           echo "summary<<EOF" >> $GITHUB_OUTPUT
           echo "$SUMMARY" >> $GITHUB_OUTPUT
           echo "EOF" >> $GITHUB_OUTPUT
-        env:
-          PR_NUMBER: ${{ github.event.pull_request.number }}
 
       - name: Format Slack Message
         id: format
@@ -33,14 +35,14 @@ jobs:
           PR_TITLE="${{ github.event.pull_request.title }}"
           PR_URL="${{ github.event.pull_request.html_url }}"
           AUTHOR="${{ github.event.pull_request.user.login }}"
-          SUMMARY="${{ steps.summary.outputs.summary }}"
+          SUMMARY="${{ steps.gen_summary.outputs.summary }}"
 
-          TEXT="🤖 *AI Summary of PR*\n• *Title*: $PR_TITLE\n• *Author*: $AUTHOR\n• *Link*: <$PR_URL>\n• *Summary*: $SUMMARY"
+          MSG="🤖 *AI Summary of PR*\n*Title:* $PR_TITLE\n*Author:* @$AUTHOR\n*Link:* <$PR_URL>\n*Summary:* $SUMMARY"
           echo "text<<EOF" >> $GITHUB_OUTPUT
-          echo "$TEXT" >> $GITHUB_OUTPUT
+          echo "$MSG" >> $GITHUB_OUTPUT
           echo "EOF" >> $GITHUB_OUTPUT
 
-      - name: Send to Slack
+      - name: Send Slack Notification
         run: |
           curl -X POST -H 'Content-type: application/json' \
             --data "{\"text\": \"${{ steps.format.outputs.text }}\"}" \
